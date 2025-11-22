@@ -9,15 +9,18 @@ jobs:
   trivy_fs_scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Install Trivy (latest stable)
+      - name: Install Trivy (Correct Official Way)
         run: |
           sudo apt-get update -y
-          sudo apt-get install wget -y
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+          sudo apt-get install curl wget apt-transport-https gnupg lsb-release -y
+          curl -sfL https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+              gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+              sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -y
+          sudo apt-get install trivy -y
 
       - name: Trivy FS Scan
         run: trivy fs --severity HIGH,CRITICAL .
@@ -26,23 +29,12 @@ jobs:
     needs: trivy_fs_scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Build Docker Image
-        run: |
-          ls -lah
-          echo "Building docker image…"
-          docker build -t ec2-app:latest .
+        run: docker build -t ec2-app:latest .
 
-      - name: Install Trivy
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install wget -y
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
-
-      - name: Scan Docker Image
+      - name: Trivy Docker Image Scan
         run: trivy image --severity HIGH,CRITICAL ec2-app:latest
 
   deploy:
