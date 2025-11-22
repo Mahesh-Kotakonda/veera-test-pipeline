@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  app:
+    image: ec2-app:latest
+    container_name: ec2-app
+    restart: always
+    ports:
+      - "3000:3000"
