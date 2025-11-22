@@ -1,18 +1,40 @@
-name: Deploy to EC2
+name: Docker Deploy with Trivy
 
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  deploy:
+
+  trivy_scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Copy files to EC2
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.44.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.44.0_Linux-64bit.deb
+
+      - name: Build Docker Image
+        run: docker build -t ec2-app:latest .
+
+      - name: Trivy Image Scan
+        run: trivy image --severity HIGH,CRITICAL ec2-app:latest
+
+  deploy:
+    needs: trivy_scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Copy project files to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -21,7 +43,7 @@ jobs:
           source: "."
           target: ${{ secrets.EC2_PATH }}
 
-      - name: Run commands on EC2
+      - name: SSH to EC2 and deploy with Docker
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -29,5 +51,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ${{ secrets.EC2_PATH }}
-            npm install
-            pm2 restart all || pm2 start app.js
+            sudo dnf install -y docker
+            sudo systemctl enable --now docker
+            sudo usermod -aG docker ec2-user
+
+            docker compose down || true
+            docker compose up --build -d
