@@ -45,3 +45,45 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Trivy Docker Image Scan
+        run: trivy image --severity HIGH,CRITICAL ec2-app:latest
+
+  deploy:
+    needs: docker_image_scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "."
+          target: ${{ secrets.EC2_PATH }}
+
+      - name: Deploy Docker App on EC2
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ${{ secrets.EC2_PATH }}
+            # Install Docker
+            if ! command -v docker &> /dev/null
+            then
+              sudo dnf install docker -y || sudo apt install docker.io -y
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+
+            # Build Docker Image
+            sudo docker build -t ec2-app .
+
+            # Remove old container if exists
+            sudo docker rm -f ec2app || true
+
+            # Run new container
+            sudo docker run -d --name ec2app -p 80:3000 ec2-app
