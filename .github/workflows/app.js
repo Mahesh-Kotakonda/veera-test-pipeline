@@ -1,0 +1,19 @@
+- name: Copy files to EC2
+  uses: appleboy/scp-action@v0.1.4
+  with:
+    host: ${{ secrets.EC2_HOST }}
+    username: ${{ secrets.EC2_USER }}
+    key: ${{ secrets.EC2_SSH_KEY }}
+    source: "."
+    target: ${{ secrets.EC2_PATH }}
+
+- name: Run commands on EC2
+  uses: appleboy/ssh-action@v0.1.6
+  with:
+    host: ${{ secrets.EC2_HOST }}
+    username: ${{ secrets.EC2_USER }}
+    key: ${{ secrets.EC2_SSH_KEY }}
+    script: |
+      cd ${{ secrets.EC2_PATH }}
+      npm install
+      pm2 restart all || pm2 start app.js
