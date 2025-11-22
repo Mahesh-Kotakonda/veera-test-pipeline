@@ -1,19 +1,11 @@
-- name: Copy files to EC2
-  uses: appleboy/scp-action@v0.1.4
-  with:
-    host: ${{ secrets.EC2_HOST }}
-    username: ${{ secrets.EC2_USER }}
-    key: ${{ secrets.EC2_SSH_KEY }}
-    source: "."
-    target: ${{ secrets.EC2_PATH }}
+const http = require("http");
 
-- name: Run commands on EC2
-  uses: appleboy/ssh-action@v0.1.6
-  with:
-    host: ${{ secrets.EC2_HOST }}
-    username: ${{ secrets.EC2_USER }}
-    key: ${{ secrets.EC2_SSH_KEY }}
-    script: |
-      cd ${{ secrets.EC2_PATH }}
-      npm install
-      pm2 restart all || pm2 start app.js
+const server = http.createServer((req, res) => {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/plain");
+  res.end("Hello from EC2 via GitHub Actions CI/CD!\n");
+});
+
+server.listen(3000, () => {
+  console.log("Server running on port 3000");
+});
