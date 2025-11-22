@@ -1,4 +1,4 @@
-name: Docker Deploy with Trivy Scan
+name: Docker Deploy with Trivy
 
 on:
   push:
@@ -9,18 +9,15 @@ jobs:
   trivy_fs_scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      # Install Trivy (ALWAYS WORKS)
-      - name: Install Trivy
+      - name: Install Trivy (latest stable)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update -y
-          sudo apt-get install -y trivy
+          sudo apt-get install wget -y
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
 
       - name: Trivy FS Scan
         run: trivy fs --severity HIGH,CRITICAL .
@@ -29,32 +26,33 @@ jobs:
     needs: trivy_fs_scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Build Docker Image
-        run: docker build -t ec2-app:latest .
+        run: |
+          ls -lah
+          echo "Building docker image…"
+          docker build -t ec2-app:latest .
 
       - name: Install Trivy
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update -y
-          sudo apt-get install -y trivy
+          sudo apt-get install wget -y
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
 
-      - name: Trivy Docker Image Scan
+      - name: Scan Docker Image
         run: trivy image --severity HIGH,CRITICAL ec2-app:latest
 
   deploy:
     needs: docker_image_scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Copy files to EC2
+      - name: Copy code to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -63,27 +61,30 @@ jobs:
           source: "."
           target: ${{ secrets.EC2_PATH }}
 
-      - name: Deploy Docker App on EC2
+      - name: Deploy Docker on EC2
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
             cd ${{ secrets.EC2_PATH }}
-            # Install Docker
-            if ! command -v docker &> /dev/null
-            then
-              sudo dnf install docker -y || sudo apt install docker.io -y
-              sudo systemctl enable docker
-              sudo systemctl start docker
+
+            echo "Installing Docker on EC2…"
+            if command -v apt; then
+              sudo apt update -y
+              sudo apt install -y docker.io
+            else
+              sudo dnf install docker -y
             fi
 
-            # Build Docker Image
-            sudo docker build -t ec2-app .
+            sudo systemctl start docker
+            sudo systemctl enable docker
 
-            # Remove old container if exists
+            echo "Rebuilding Docker Image…"
+            sudo docker build -t ec2-app:latest .
+
+            echo "Restarting container…"
             sudo docker rm -f ec2app || true
-
-            # Run new container
-            sudo docker run -d --name ec2app -p 80:3000 ec2-app
+            sudo docker run -d --name ec2app -p 80:3000 ec2-app:latest
