@@ -11,18 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Trivy (Official + No 404)
+      - name: Install Trivy
         run: |
           sudo apt-get update -y
           sudo apt-get install curl wget apt-transport-https gnupg lsb-release -y
-          curl -sfL https://aquasecurity.github.io/trivy-repo/deb/public.key | \
-              gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg >/dev/null
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
-              sudo tee /etc/apt/sources.list.d/trivy.list
+          curl -sfL https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update -y
           sudo apt-get install trivy -y
 
-      - name: Run Trivy FS scan
+      - name: Trivy FS Scan
         run: trivy fs --severity HIGH,CRITICAL .
 
   docker_image_scan:
@@ -31,15 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Validate Dockerfile exists
+      - name: Verify Dockerfile exists
         run: |
           if [ ! -f Dockerfile ]; then
-            echo "Fix: Ensure Dockerfile is inside root of repo."
+            echo "❌ Dockerfile missing in ROOT of repo"
             exit 1
           fi
 
       - name: Build Docker Image
         run: docker build -t ec2-app:latest .
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install trivy -y
 
       - name: Trivy Docker Image Scan
         run: trivy image --severity HIGH,CRITICAL ec2-app:latest
@@ -50,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Copy project to EC2
+      - name: Copy code to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -69,4 +72,20 @@ jobs:
             set -e
             cd ${{ secrets.EC2_PATH }}
 
-            echo
+            echo "Installing Docker..."
+            if command -v apt; then
+              sudo apt update -y
+              sudo apt install -y docker.io
+            else
+              sudo dnf install -y docker
+            fi
+
+            sudo systemctl start docker
+            sudo systemctl enable docker
+
+            echo "Building Docker image on EC2..."
+            sudo docker build -t ec2-app .
+
+            echo "Restarting container..."
+            sudo docker rm -f ec2app || true
+            sudo docker run -d --name ec2app -p 80:3000 ec2-app
