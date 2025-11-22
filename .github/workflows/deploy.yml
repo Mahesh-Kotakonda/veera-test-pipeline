@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Trivy (Correct Official Way)
+      - name: Install Trivy (Official + No 404)
         run: |
           sudo apt-get update -y
           sudo apt-get install curl wget apt-transport-https gnupg lsb-release -y
@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install trivy -y
 
-      - name: Trivy FS Scan
+      - name: Run Trivy FS scan
         run: trivy fs --severity HIGH,CRITICAL .
 
   docker_image_scan:
@@ -30,6 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Validate Dockerfile exists
+        run: |
+          if [ ! -f Dockerfile ]; then
+            echo "Fix: Ensure Dockerfile is inside root of repo."
+            exit 1
+          fi
 
       - name: Build Docker Image
         run: docker build -t ec2-app:latest .
@@ -41,10 +48,9 @@ jobs:
     needs: docker_image_scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Copy code to EC2
+      - name: Copy project to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -63,20 +69,4 @@ jobs:
             set -e
             cd ${{ secrets.EC2_PATH }}
 
-            echo "Installing Docker on EC2…"
-            if command -v apt; then
-              sudo apt update -y
-              sudo apt install -y docker.io
-            else
-              sudo dnf install docker -y
-            fi
-
-            sudo systemctl start docker
-            sudo systemctl enable docker
-
-            echo "Rebuilding Docker Image…"
-            sudo docker build -t ec2-app:latest .
-
-            echo "Restarting container…"
-            sudo docker rm -f ec2app || true
-            sudo docker run -d --name ec2app -p 80:3000 ec2-app:latest
+            echo
